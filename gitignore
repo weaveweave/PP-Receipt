@@ -1,0 +1,102 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Project Specific - Sensitive Data
+api_keys.txt
+secrets.json
+credentials.json
+*.key
+*.pem
+
+# Project Specific - Large Files
+*.pdf
+*.xlsx
+*.xls
+
+# Project Specific - Output (keep structure, ignore content)
+output/step1_images/*.png
+output/step1_images/*.jpg
+output/step2_json/*.json
+output/step3_excel/*.xlsx
+output/debug/*
+
+# Keep directory structure
+!output/step1_images/.gitkeep
+!output/step2_json/.gitkeep
+!output/step3_excel/.gitkeep
+
+# Temporary Files
+scratch/
+temp/
+tmp/
+*.tmp
+*.bak
+*.log
+logs/
+
+# OS
+Thumbs.db
+Desktop.ini
