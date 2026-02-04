@@ -1,6 +1,6 @@
 # Receipt Pipeline
 
-Automated data extraction from PDF receipts to Excel spreadsheets using Vision LLM.
+Automated data extraction from PDF receipts to Excel spreadsheets using Vision LLM (tested with Qwen3-VL and olmOCR 2).
 
 ## What It Does
 
