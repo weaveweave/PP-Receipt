@@ -1,6 +1,8 @@
 # Receipt Pipeline
 
-Automated data extraction from PDF receipts to Excel spreadsheets using Vision LLM.
+Automated data extraction from PDF receipts to Excel spreadsheets using Vision LLM. This pipeline runs entirely on your local machine using LM Studio: All processing runs locally on your machine. Your receipt data never leaves your computer.
+
+This project has been tested with multiple Vision LLM models (Qwen3-VL and olmOCR 2). You can switch between models to achieve different results based on your needs.
 
 ![Pipeline Overview](docs/images/pipeline-overview.png)
 
