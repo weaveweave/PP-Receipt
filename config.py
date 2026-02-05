@@ -137,8 +137,8 @@ EXTRACTION_PROMPT = """Anda adalah asisten AI yang bertugas mengekstrak data dar
 INSTRUKSI EKSTRASI - Ikuti dengan TELITI:
 
 1. **no_kuitansi**: Cari angka yang muncul setelah kata "No." di bagian atas kuitansi
-2. **tanggal**: Cari tanggal yang muncul setelah kata "Sungai Angit," (format: DD-MM-YYYY)
-3. **penerima**: Cari nama orang yang tertulis DI BAWAH kata "Yang Menerima" DAN DI BAWAH tanda tangan. Ini adalah nama yang tertulis (bukan tanda tangan), biasanya ditulis dengan huruf kapital atau cetak
+2. **tanggal**: Cari tanggal yang muncul setelah nama tempat misal "Jakarta, " atau "Bekasi, " (format: DD-MM-YYYY)
+3. **penerima**: Cari nama orang yang tertulis DI BAWAH kata "Yang Menerima" DAN DI BAWAH tanda tangan. Ini adalah nama orang yang tertulis (bukan tanda tangan), biasanya ditulis dengan huruf kapital atau cetak
 4. **uang_sejumlah_rp**: Cari angka yang muncul SETELAH "Rp." di bagian tengah kuitansi (BUKAN yang ada di bagian "Uang Sejumlah"). Ambil hanya angka, tanpa titik, tanpa koma, tanpa "Rp."
 5. **jumlah_liter**: Cari angka yang muncul SEBELUM kata "Liter". Ambil hanya angka
 6. **keterangan**: Cari angka persentase yang ada dalam tanda kurung, contoh: "(80,2%)". Ambil termasuk tanda kurung dan persen
