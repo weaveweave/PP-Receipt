@@ -1,6 +1,5 @@
 """
 Configuration file for Receipt Extraction Pipeline
-Optimized for MacBook Air M2 (16GB RAM)
 """
 
 import os
@@ -132,12 +131,12 @@ DEBUG_DIR = os.path.join(OUTPUT_DIR, "debug")
 # EXTRACTION PROMPT TEMPLATE
 # ============================================================================
 
-EXTRACTION_PROMPT = """Anda adalah asisten AI yang bertugas mengekstrak data dari kuitansi PT. X.
+EXTRACTION_PROMPT = """Anda adalah asisten AI yang bertugas mengekstrak data dari kuitansi PT. X. dalam satu gambar ada dua kuitansi, atas dan bawah.
 
 INSTRUKSI EKSTRASI - Ikuti dengan TELITI:
 
 1. **no_kuitansi**: Cari angka yang muncul setelah kata "No." di bagian atas kuitansi
-2. **tanggal**: Cari tanggal yang muncul setelah nama tempat misal "Jakarta, " atau "Bekasi, " (format: DD-MM-YYYY)
+2. **tanggal**: Cari tanggal yang muncul setelah nama tempat misal "Jakarta, " atau "Sungai Angit, " (ubah menjadi format: DD-MMM-YYYY)
 3. **penerima**: Cari nama orang yang tertulis DI BAWAH kata "Yang Menerima" DAN DI BAWAH tanda tangan. Ini adalah nama orang yang tertulis (bukan tanda tangan), biasanya ditulis dengan huruf kapital atau cetak
 4. **uang_sejumlah_rp**: Cari angka yang muncul SETELAH "Rp." di bagian tengah kuitansi (BUKAN yang ada di bagian "Uang Sejumlah"). Ambil hanya angka, tanpa titik, tanpa koma, tanpa "Rp."
 5. **jumlah_liter**: Cari angka yang muncul SEBELUM kata "Liter". Ambil hanya angka
@@ -146,19 +145,30 @@ INSTRUKSI EKSTRASI - Ikuti dengan TELITI:
 FORMAT OUTPUT:
 Kembalikan hasil dalam format JSON yang valid dengan struktur berikut:
 
-```json
 {
-  "no_kuitansi": "nilai_string",
-  "tanggal": "DD-MM-YYYY",
-  "penerima": "NAMA PENERIMA",
-  "uang_sejumlah_rp": "angka_tanpa_format",
-  "jumlah_liter": "angka",
-  "keterangan": "(XX,X%)"
+"receipts": [
+{
+"no_kuitansi": "",
+"tanggal": "",
+"penerima": "",
+"uang_sejumlah_rp": "",
+"jumlah_liter": "",
+"keterangan": ""
+},
+{
+"no_kuitansi": "",
+"tanggal": "",
+"penerima": "",
+"uang_sejumlah_rp": "",
+"jumlah_liter": "",
+"keterangan": ""
 }
-```
+]
+}
 
 PENTING:
-- Jangan tambahkan field lain selain 6 field di atas
+- Jangan tambahkan field lain
+- Jangan input multiple line dalam satu field (dilarang /n atau \n)
 - Semua nilai harus berupa string
 - Untuk uang_sejumlah_rp: hapus semua titik, koma, dan "Rp." - hanya angka saja
 - Pastikan JSON valid (tidak ada trailing comma)

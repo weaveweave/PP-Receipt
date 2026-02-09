@@ -1,6 +1,7 @@
 """
 Step 3: Convert extracted JSON data to Excel spreadsheet
 Creates a nicely formatted Excel file with all receipt data
+Updated to handle new format with multiple receipts per image
 """
 
 import os
@@ -30,13 +31,14 @@ from config import (
 
 def load_all_json_files(json_dir):
     """
-    Load all JSON files from directory
+    Load all JSON files from directory and extract receipts
+    Now handles the new format with receipts array
     
     Args:
         json_dir (str): Directory containing JSON files
     
     Returns:
-        list: List of dictionaries with extracted data
+        list: List of dictionaries with extracted data (flattened from all receipts arrays)
     """
     
     json_files = [
@@ -46,30 +48,127 @@ def load_all_json_files(json_dir):
     ]
     
     if not json_files:
-        print("âš ï¸  No JSON files found!")
+        print("⚠️  No JSON files found!")
         return []
     
-    print(f"ðŸ“Š Found {len(json_files)} JSON file(s)")
+    print(f"📊 Found {len(json_files)} JSON file(s)")
     
     all_data = []
     errors = []
+    total_receipts = 0
     
     for json_path in sorted(json_files):
         filename = Path(json_path).name
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                all_data.append(data)
-                if VERBOSE:
-                    print(f"  âœ“ Loaded: {filename}")
+                
+                # Handle new format with receipts array
+                if isinstance(data, dict) and "receipts" in data:
+                    receipts = data["receipts"]
+                    
+                    # Case 1: receipts is a list
+                    if isinstance(receipts, list):
+                        for receipt in receipts:
+                            if receipt and isinstance(receipt, dict):  # Skip empty or invalid receipts
+                                all_data.append(receipt)
+                                total_receipts += 1
+                        if VERBOSE:
+                            print(f"  ✓ Loaded: {filename} ({len(receipts)} receipt(s))")
+                    
+                    # Case 2: receipts is a single dict (LLM mistake)
+                    elif isinstance(receipts, dict):
+                        # Treat it as a single receipt
+                        all_data.append(receipts)
+                        total_receipts += 1
+                        if VERBOSE:
+                            print(f"  ✓ Loaded: {filename} (1 receipt - dict format)")
+                    
+                    # Case 3: receipts is a STRING (needs parsing)
+                    elif isinstance(receipts, str):
+                        try:
+                            # Try to parse as JSON first
+                            parsed = json.loads(receipts)
+                            if isinstance(parsed, list):
+                                for receipt in parsed:
+                                    if receipt and isinstance(receipt, dict):
+                                        all_data.append(receipt)
+                                        total_receipts += 1
+                                if VERBOSE:
+                                    print(f"  ✓ Loaded: {filename} ({len(parsed)} receipt(s) - parsed from string)")
+                            elif isinstance(parsed, dict):
+                                all_data.append(parsed)
+                                total_receipts += 1
+                                if VERBOSE:
+                                    print(f"  ✓ Loaded: {filename} (1 receipt - parsed from string)")
+                        except json.JSONDecodeError:
+                            # Try to parse as Python literal (single quotes)
+                            try:
+                                import ast
+                                parsed = ast.literal_eval(receipts)
+                                if isinstance(parsed, list):
+                                    for receipt in parsed:
+                                        if receipt and isinstance(receipt, dict):
+                                            all_data.append(receipt)
+                                            total_receipts += 1
+                                    if VERBOSE:
+                                        print(f"  ✓ Loaded: {filename} ({len(parsed)} receipt(s) - parsed Python literal)")
+                                elif isinstance(parsed, dict):
+                                    all_data.append(parsed)
+                                    total_receipts += 1
+                                    if VERBOSE:
+                                        print(f"  ✓ Loaded: {filename} (1 receipt - parsed Python literal)")
+                            except (ValueError, SyntaxError) as e:
+                                errors.append({"file": filename, "error": f"Could not parse string receipts: {e}"})
+                                print(f"  ⚠️  Warning: {filename} - Could not parse receipts string, skipping")
+                    
+                    # Case 4: receipts is something else (number, etc)
+                    else:
+                        # Try to salvage: check if data itself has receipt fields
+                        required_fields = ["no_kuitansi", "tanggal", "penerima"]
+                        if all(field in data for field in required_fields):
+                            all_data.append(data)
+                            total_receipts += 1
+                            if VERBOSE:
+                                print(f"  ✓ Loaded: {filename} (1 receipt - salvaged from root)")
+                        else:
+                            errors.append({"file": filename, "error": f"receipts field is {type(receipts).__name__}, not list"})
+                            print(f"  ⚠️  Warning: {filename} - receipts field is {type(receipts).__name__}, skipping")
+                
+                # Handle old format (single receipt per file, no receipts field)
+                elif isinstance(data, dict):
+                    # Check if it has receipt fields
+                    required_fields = ["no_kuitansi", "tanggal", "penerima"]
+                    if any(field in data for field in required_fields):
+                        all_data.append(data)
+                        total_receipts += 1
+                        if VERBOSE:
+                            print(f"  ✓ Loaded: {filename} (1 receipt - old format)")
+                    else:
+                        errors.append({"file": filename, "error": "No receipt fields found"})
+                        print(f"  ⚠️  Warning: {filename} - No valid receipt fields found")
+                
+                # Handle if data is a list directly
+                elif isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            all_data.append(item)
+                            total_receipts += 1
+                    if VERBOSE:
+                        print(f"  ✓ Loaded: {filename} ({len(data)} receipt(s) - list format)")
+                
+                else:
+                    errors.append({"file": filename, "error": "Invalid JSON structure"})
+                    print(f"  ✗ Error: {filename} - Invalid JSON structure")
+                    
         except Exception as e:
             errors.append({"file": filename, "error": str(e)})
-            print(f"  âœ— Error loading {filename}: {e}")
+            print(f"  ✗ Error loading {filename}: {e}")
     
-    print(f"âœ… Successfully loaded {len(all_data)} file(s)")
+    print(f"✅ Successfully loaded {total_receipts} receipt(s) from {len(json_files)} file(s)")
     
     if errors:
-        print(f"âš ï¸  Failed to load {len(errors)} file(s)")
+        print(f"⚠️  {len(errors)} file(s) had issues (but may have been salvaged)")
     
     return all_data
 
@@ -90,7 +189,7 @@ def transform_to_dataframe(data_list):
     """
     
     if not data_list:
-        print("âš ï¸  No data to transform!")
+        print("⚠️  No data to transform!")
         return pd.DataFrame()
     
     # Create DataFrame
@@ -121,7 +220,7 @@ def transform_to_dataframe(data_list):
         # Convert back to string
         df["No. Kuitansi"] = df["No. Kuitansi"].fillna("").astype(str).str.replace(".0", "", regex=False)
     
-    print(f"ðŸ“Š Created DataFrame with {len(df)} rows")
+    print(f"📊 Created DataFrame with {len(df)} rows")
     
     return df
 
@@ -161,7 +260,7 @@ def apply_excel_formatting(excel_path):
         excel_path (str): Path to Excel file
     """
     
-    print("ðŸŽ¨ Applying Excel formatting...")
+    print("🎨 Applying Excel formatting...")
     
     # Load workbook
     wb = load_workbook(excel_path)
@@ -222,7 +321,7 @@ def apply_excel_formatting(excel_path):
     
     # Save workbook
     wb.save(excel_path)
-    print("âœ… Formatting applied")
+    print("✅ Formatting applied")
 
 
 # ============================================================================
@@ -242,7 +341,7 @@ def create_excel(data_list, output_path):
     """
     
     if not data_list:
-        print("âŒ No data to create Excel file!")
+        print("❌ No data to create Excel file!")
         return False
     
     try:
@@ -250,24 +349,24 @@ def create_excel(data_list, output_path):
         df = transform_to_dataframe(data_list)
         
         if df.empty:
-            print("âŒ DataFrame is empty!")
+            print("❌ DataFrame is empty!")
             return False
         
         # Save to Excel
-        print(f"ðŸ’¾ Saving to Excel: {output_path}")
+        print(f"💾 Saving to Excel: {output_path}")
         df.to_excel(output_path, sheet_name=EXCEL_SHEET_NAME, index=False, engine='openpyxl')
         
         # Apply formatting
         apply_excel_formatting(output_path)
         
-        print(f"âœ… Excel file created successfully!")
+        print(f"✅ Excel file created successfully!")
         print(f"   - Rows: {len(df)}")
         print(f"   - Columns: {len(df.columns)}")
         
         return True
     
     except Exception as e:
-        print(f"âŒ Error creating Excel file: {e}")
+        print(f"❌ Error creating Excel file: {e}")
         return False
 
 
@@ -279,7 +378,7 @@ def main():
     """Main execution function"""
     
     print("=" * 60)
-    print("ðŸš€ STEP 3: CONVERT JSON TO EXCEL")
+    print("🚀 STEP 3: CONVERT JSON TO EXCEL")
     print("=" * 60)
     print(f"Input directory: {STEP2_OUTPUT_DIR}")
     print(f"Output directory: {STEP3_OUTPUT_DIR}")
@@ -287,16 +386,16 @@ def main():
     
     # Check if input directory exists
     if not os.path.exists(STEP2_OUTPUT_DIR):
-        print(f"\nâŒ Error: Input directory not found: {STEP2_OUTPUT_DIR}")
+        print(f"\n❌ Error: Input directory not found: {STEP2_OUTPUT_DIR}")
         print("   Please run step2_extract_data.py first")
         return
     
     # Load all JSON files
-    print(f"\nðŸ“‚ Loading JSON files from {STEP2_OUTPUT_DIR}...")
+    print(f"\n📂 Loading JSON files from {STEP2_OUTPUT_DIR}...")
     data_list = load_all_json_files(STEP2_OUTPUT_DIR)
     
     if not data_list:
-        print("\nâŒ No data found to process!")
+        print("\n❌ No data found to process!")
         return
     
     # Create output directory
@@ -304,17 +403,17 @@ def main():
     
     # Create Excel file
     output_path = os.path.join(STEP3_OUTPUT_DIR, EXCEL_OUTPUT_FILENAME)
-    print(f"\nðŸ“Š Creating Excel spreadsheet...")
+    print(f"\n📊 Creating Excel spreadsheet...")
     
     success = create_excel(data_list, output_path)
     
     if success:
-        print("\nâœ¨ Step 3 completed!")
-        print(f"ðŸ“ Output saved to: {output_path}")
-        print(f"\nðŸŽ‰ Pipeline completed successfully!")
+        print("\n✨ Step 3 completed!")
+        print(f"📁 Output saved to: {output_path}")
+        print(f"\n🎉 Pipeline completed successfully!")
         print(f"   You can now open the Excel file to view all extracted receipt data.")
     else:
-        print("\nâŒ Failed to create Excel file")
+        print("\n❌ Failed to create Excel file")
 
 
 if __name__ == "__main__":
