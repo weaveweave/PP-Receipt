@@ -2,6 +2,7 @@
 Step 3: Convert extracted JSON data to Excel spreadsheet
 Creates a nicely formatted Excel file with all receipt data
 Updated to handle new format with multiple receipts per image
+FIXED: no_kuitansi now treated as string, not numeric
 """
 
 import os
@@ -212,13 +213,16 @@ def transform_to_dataframe(data_list):
     if currency_col in df.columns:
         df[currency_col] = df[currency_col].apply(lambda x: format_currency(x))
     
-    # Sort by No. Kuitansi
+    # FIXED: Keep no_kuitansi as string, don't convert to numeric
     if "No. Kuitansi" in df.columns:
-        # Convert to numeric for proper sorting
-        df["No. Kuitansi"] = pd.to_numeric(df["No. Kuitansi"], errors='coerce')
+        # Convert to string and handle any None/NaN values
+        df["No. Kuitansi"] = df["No. Kuitansi"].fillna("").astype(str)
+        # Remove any ".0" that might have been added if value was originally numeric
+        df["No. Kuitansi"] = df["No. Kuitansi"].str.replace(".0", "", regex=False)
+        
+        # Sort by No. Kuitansi as string (alphanumeric sort)
+        # This will sort: "001", "002", "010", "A01", "B02", etc.
         df = df.sort_values("No. Kuitansi")
-        # Convert back to string
-        df["No. Kuitansi"] = df["No. Kuitansi"].fillna("").astype(str).str.replace(".0", "", regex=False)
     
     print(f"📊 Created DataFrame with {len(df)} rows")
     

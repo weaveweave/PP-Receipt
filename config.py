@@ -26,16 +26,20 @@ STEP3_OUTPUT_DIR = os.path.join(OUTPUT_DIR, "step3_excel")
 
 # DPI for PDF to image conversion (higher = better quality, but larger files)
 # 300 DPI is standard for document scanning
-PDF_TO_IMAGE_DPI = 300
+PDF_TO_IMAGE_DPI = 250
 
 # Image format for output
 IMAGE_FORMAT = "PNG"  # PNG is lossless, good for text documents
 
+# Image size optimization (for LM Studio API efficiency)
+# Images will be resized during preprocessing if they exceed this size
+MAX_IMAGE_SIZE = 1300  # Max dimension in pixels (reduces memory and bandwidth)
+
 # Image preprocessing options
 ENABLE_GRAYSCALE = True  # Convert to grayscale (reduces noise, improves OCR)
-ENABLE_DESKEW = True  # Auto-correct skewed/rotated images
-ENABLE_CONTRAST_ENHANCEMENT = True  # Enhance contrast for better readability
-ENABLE_NOISE_REDUCTION = True  # Remove noise from scanned documents
+ENABLE_DESKEW = False # Auto-correct skewed/rotated images
+ENABLE_CONTRAST_ENHANCEMENT = False  # Enhance contrast for better readability
+ENABLE_NOISE_REDUCTION = False  # Remove noise from scanned documents
 ENABLE_BINARIZATION = False  # Convert to pure black & white (optional, can be too aggressive)
 
 # Deskew sensitivity (degrees)
@@ -54,20 +58,13 @@ LM_STUDIO_BASE_URL = "http://localhost:1234"
 # Option 1: Qwen3-VL (RECOMMENDED - Best overall performance)
 LM_STUDIO_MODEL = "qwen3-vl"
 
-# Option 2: Ministral 3 by Mistral
-# LM_STUDIO_MODEL = "ministral-3"
-
-# Option 3: OLMoCR 2 by Allen AI
-# LM_STUDIO_MODEL = "olmocr-2"
+# Option 2: OLMoCR 2 by Allen AI
+#LM_STUDIO_MODEL = "olmocr-2"
 
 # API request settings
 REQUEST_TIMEOUT = 180  # Timeout in seconds (3 minutes)
 MAX_RETRIES = 3  # Number of retries for failed API calls
 RETRY_BASE_DELAY = 2  # Base delay for exponential backoff (seconds)
-
-# Image size limit for API (to save memory and bandwidth)
-# Images larger than this will be resized before sending to LM Studio
-MAX_IMAGE_SIZE = 1500  # Max dimension in pixels
 
 # LLM generation parameters
 TEMPERATURE = 0.1  # Low temperature for more deterministic outputs
@@ -135,12 +132,12 @@ EXTRACTION_PROMPT = """Anda adalah asisten AI yang bertugas mengekstrak data dar
 
 INSTRUKSI EKSTRASI - Ikuti dengan TELITI:
 
-1. **no_kuitansi**: Cari angka yang muncul setelah kata "No." di bagian atas kuitansi
-2. **tanggal**: Cari tanggal yang muncul setelah nama tempat misal "Jakarta, " atau "Sungai Angit, " (ubah menjadi format: DD-MMM-YYYY)
-3. **penerima**: Cari nama orang yang tertulis DI BAWAH kata "Yang Menerima" DAN DI BAWAH tanda tangan. Ini adalah nama orang yang tertulis (bukan tanda tangan), biasanya ditulis dengan huruf kapital atau cetak
+1. **no_kuitansi**: Cari angka yang muncul setelah kata "No." di bagian atas kuitansi. ambil beserta format lengkap, biasanya mengandung tanda garis miring, diakhiri tahun 2023. lalu hapus spasi apabila ada.
+2. **tanggal**: Cari tanggal yang muncul setelah nama tempat misal "Jakarta, " atau "Sungai Angit, "; dan sebelum kata "Yang Menerima"(ubah menjadi format: DD-MMM-YY)
+3. **penerima**: Cari nama orang yang tertulis pada receipt. biasanya di dekat signature dan kata "Yang Menerima", tapi yang dicari berupa nama orang. sesuai keyakinanmu saja, jangan berpikir terlalu lama.
 4. **uang_sejumlah_rp**: Cari angka yang muncul SETELAH "Rp." di bagian tengah kuitansi (BUKAN yang ada di bagian "Uang Sejumlah"). Ambil hanya angka, tanpa titik, tanpa koma, tanpa "Rp."
-5. **jumlah_liter**: Cari angka yang muncul SEBELUM kata "Liter". Ambil hanya angka
-6. **keterangan**: Cari angka persentase yang ada dalam tanda kurung, contoh: "(80,2%)". Ambil termasuk tanda kurung dan persen
+5. **jumlah_liter**: Cari angka yang muncul SEBELUM kata "Liter". Ambil angka dan sertakan Liter
+6. **keterangan**: Cari angka persentase yang ada dalam tanda kurung, biasanya setelah liter, kata "liter", atau "Liter". contoh: "(XX,X%)". Ambil angka dan persen
 
 FORMAT OUTPUT:
 Kembalikan hasil dalam format JSON yang valid dengan struktur berikut:
@@ -174,8 +171,7 @@ PENTING:
 - Pastikan JSON valid (tidak ada trailing comma)
 - Jika data tidak ditemukan, isi dengan string kosong ""
 
-Ekstrak data dari gambar kuitansi berikut:"""
-
+Ekstrak data dari gambar kuitansi berikut, dengan cepat, jangan berpikir terlalu lama dan jangan berhalusinasi:"""
 # ============================================================================
 # AUTO-CREATE DIRECTORIES ON IMPORT
 # ============================================================================

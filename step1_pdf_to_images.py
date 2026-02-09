@@ -1,15 +1,13 @@
 """
 Step 1: Convert PDF receipts to optimized images
-IMPROVED VERSION - Better accuracy and performance
-
 Features:
 - PDF to image conversion (300 DPI)
 - Grayscale conversion
-- IMPROVED: Projection-based auto-deskew (more accurate)
-- IMPROVED: Optimized contrast enhancement
-- IMPROVED: Smart noise reduction with edge preservation
-- IMPROVED: Adaptive sharpening for better OCR
+- Auto-deskew (correct rotation)
+- Contrast enhancement
+- Noise reduction
 - Optional binarization
+- Auto-resize for LM Studio API optimization
 """
 
 import os
@@ -27,6 +25,7 @@ from config import (
     STEP1_OUTPUT_DIR,
     PDF_TO_IMAGE_DPI,
     IMAGE_FORMAT,
+    MAX_IMAGE_SIZE,
     ENABLE_GRAYSCALE,
     ENABLE_DESKEW,
     ENABLE_CONTRAST_ENHANCEMENT,
@@ -42,7 +41,7 @@ from config import (
 
 
 # ============================================================================
-# IMPROVED IMAGE PREPROCESSING FUNCTIONS
+# IMAGE PREPROCESSING FUNCTIONS
 # ============================================================================
 
 def convert_to_grayscale(image):
@@ -52,143 +51,52 @@ def convert_to_grayscale(image):
     return image
 
 
-def estimate_skew_angle(image):
-    """
-    Estimate document skew angle using projection profile method
-    More accurate than Hough Transform for text documents
-    
-    Args:
-        image: Grayscale image
-    
-    Returns:
-        float: Estimated skew angle in degrees (-45 to +45)
-    """
-    # Ensure grayscale
-    if len(image.shape) == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = image.copy()
-    
-    # Apply binary threshold to get text regions
-    # Using Otsu's method for automatic threshold
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Find text contours
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Filter small contours (noise)
-    min_area = 50  # Minimum area to consider
-    text_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
-    
-    if len(text_contours) < 10:  # Need enough text for reliable estimation
-        if VERBOSE:
-            print(f"    ⚠️  Not enough text regions ({len(text_contours)}) for skew detection")
-        return 0.0
-    
-    # Calculate angle using minAreaRect
-    angles = []
-    for cnt in text_contours:
-        rect = cv2.minAreaRect(cnt)
-        angle = rect[2]
-        
-        # Adjust angle based on rectangle orientation
-        # minAreaRect returns angle between -90 and 0
-        if rect[1][0] < rect[1][1]:  # width < height
-            angle = 90 + angle
-        
-        # Normalize to -45 to +45 range
-        if angle > 45:
-            angle = angle - 90
-        elif angle < -45:
-            angle = angle + 90
-            
-        angles.append(angle)
-    
-    if not angles:
-        return 0.0
-    
-    # Use median to avoid outliers
-    median_angle = np.median(angles)
-    
-    # Additional validation: check standard deviation
-    std_angle = np.std(angles)
-    if std_angle > 15:  # High variance = unreliable
-        if VERBOSE:
-            print(f"    ⚠️  High angle variance ({std_angle:.2f}°), skipping deskew")
-        return 0.0
-    
-    return median_angle
-
-
 def deskew_image(image, debug_name=None):
     """
     Automatically detect and correct image skew/rotation
-    IMPROVED: Uses projection profile method instead of Hough Transform
-    More accurate for text documents
-    
-    Args:
-        image: Input image (grayscale or color)
-        debug_name: Optional name for debug output
-    
-    Returns:
-        Deskewed image
+    Uses Hough Line Transform to detect document edges
     """
     gray = image if len(image.shape) == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # Estimate skew angle
-    angle = estimate_skew_angle(gray)
+    # Edge detection
+    edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+    
+    # Detect lines using Hough Transform
+    lines = cv2.HoughLines(edges, 1, np.pi / 180, 200)
+    
+    if lines is None:
+        if VERBOSE:
+            print(f"    ⚠️  No lines detected for deskew")
+        return image
+    
+    # Calculate angles
+    angles = []
+    for line in lines:
+        rho, theta = line[0]
+        angle = np.degrees(theta) - 90
+        angles.append(angle)
+    
+    # Find median angle
+    median_angle = np.median(angles)
     
     # Only rotate if angle is significant
-    if abs(angle) < DESKEW_ANGLE_THRESHOLD:
+    if abs(median_angle) < DESKEW_ANGLE_THRESHOLD:
         if VERBOSE:
-            print(f"    ✓ Skew angle {angle:.2f}° is negligible, skipping deskew")
+            print(f"    ✓ Skew angle {median_angle:.2f}° is negligible, skipping deskew")
         return image
     
     if VERBOSE:
-        print(f"    🔄 Deskewing by {angle:.2f}°")
+        print(f"    🔄 Deskewing by {median_angle:.2f}°")
     
     # Rotate image
     (h, w) = image.shape[:2]
     center = (w // 2, h // 2)
-    
-    # Calculate rotation matrix
-    M = cv2.getRotationMatrix2D(center, angle, 1.0)
-    
-    # Calculate new image size to avoid cropping
-    cos = np.abs(M[0, 0])
-    sin = np.abs(M[0, 1])
-    new_w = int((h * sin) + (w * cos))
-    new_h = int((h * cos) + (w * sin))
-    
-    # Adjust rotation matrix to account for translation
-    M[0, 2] += (new_w / 2) - center[0]
-    M[1, 2] += (new_h / 2) - center[1]
-    
-    # Perform rotation with white background
+    M = cv2.getRotationMatrix2D(center, median_angle, 1.0)
     rotated = cv2.warpAffine(
-        image, M, (new_w, new_h),
+        image, M, (w, h),
         flags=cv2.INTER_CUBIC,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(255, 255, 255) if len(image.shape) == 2 else (255, 255, 255)
+        borderMode=cv2.BORDER_REPLICATE
     )
-    
-    # Crop back to original aspect ratio to remove excess white space
-    # Find actual content boundaries
-    if len(rotated.shape) == 2:
-        coords = cv2.findNonZero(cv2.bitwise_not(cv2.threshold(rotated, 250, 255, cv2.THRESH_BINARY)[1]))
-    else:
-        gray_rotated = cv2.cvtColor(rotated, cv2.COLOR_BGR2GRAY)
-        coords = cv2.findNonZero(cv2.bitwise_not(cv2.threshold(gray_rotated, 250, 255, cv2.THRESH_BINARY)[1]))
-    
-    if coords is not None:
-        x, y, w, h = cv2.boundingRect(coords)
-        # Add small margin
-        margin = 10
-        x = max(0, x - margin)
-        y = max(0, y - margin)
-        w = min(rotated.shape[1] - x, w + 2 * margin)
-        h = min(rotated.shape[0] - y, h + 2 * margin)
-        rotated = rotated[y:y+h, x:x+w]
     
     if SAVE_DEBUG_IMAGES and debug_name:
         debug_path = os.path.join(DEBUG_DIR, f"{debug_name}_deskewed.png")
@@ -199,21 +107,13 @@ def deskew_image(image, debug_name=None):
 
 def enhance_contrast(image):
     """
-    Enhance image contrast using optimized CLAHE
-    IMPROVED: Better parameters for receipt documents
-    
-    Args:
-        image: Input image (grayscale or color)
-    
-    Returns:
-        Contrast-enhanced image
+    Enhance image contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    Better than simple histogram equalization for document images
     """
     gray = image if len(image.shape) == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # Apply CLAHE with optimized parameters for receipts
-    # Lower clipLimit to avoid over-enhancement
-    # Smaller tileGridSize for finer local contrast
-    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(4, 4))
+    # Apply CLAHE
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
     
     if VERBOSE:
@@ -224,22 +124,13 @@ def enhance_contrast(image):
 
 def reduce_noise(image):
     """
-    Reduce noise using bilateral filter
-    IMPROVED: Faster than NLM, better edge preservation
-    
-    Args:
-        image: Input image (grayscale or color)
-    
-    Returns:
-        Denoised image
+    Reduce noise using Non-Local Means Denoising
+    Preserves edges while removing noise
     """
     gray = image if len(image.shape) == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # Bilateral filter: removes noise while preserving edges
-    # d=5: smaller neighborhood (faster)
-    # sigmaColor=50: moderate color similarity
-    # sigmaSpace=50: moderate spatial similarity
-    denoised = cv2.bilateralFilter(gray, d=5, sigmaColor=50, sigmaSpace=50)
+    # Apply denoising
+    denoised = cv2.fastNlMeansDenoising(gray, None, h=10, templateWindowSize=7, searchWindowSize=21)
     
     if VERBOSE:
         print(f"    ✓ Noise reduced")
@@ -247,58 +138,19 @@ def reduce_noise(image):
     return denoised
 
 
-def sharpen_image(image):
-    """
-    Apply adaptive sharpening to improve text readability
-    NEW FUNCTION: Helps OCR/Vision models read text better
-    
-    Args:
-        image: Input image (grayscale)
-    
-    Returns:
-        Sharpened image
-    """
-    gray = image if len(image.shape) == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # Create sharpening kernel
-    # This kernel enhances edges without amplifying noise too much
-    kernel = np.array([[-1, -1, -1],
-                       [-1,  9, -1],
-                       [-1, -1, -1]]) / 1.0
-    
-    # Apply sharpening
-    sharpened = cv2.filter2D(gray, -1, kernel)
-    
-    # Blend original and sharpened (50% each) for subtle effect
-    result = cv2.addWeighted(gray, 0.5, sharpened, 0.5, 0)
-    
-    if VERBOSE:
-        print(f"    ✓ Image sharpened")
-    
-    return result
-
-
 def binarize_image(image):
     """
     Convert to pure black and white using adaptive thresholding
-    IMPROVED: Better parameters for receipt documents
-    
-    Args:
-        image: Input image (grayscale)
-    
-    Returns:
-        Binarized image
+    Good for very clear text extraction, but can be too aggressive
     """
     gray = image if len(image.shape) == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # Adaptive thresholding with optimized parameters
-    # Block size 15 (larger blocks for receipts)
-    # C=10 (more conservative threshold adjustment)
+    # Adaptive thresholding (better than simple thresholding)
     binary = cv2.adaptiveThreshold(
         gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        15, 10
+        11, 2
     )
     
     if VERBOSE:
@@ -307,10 +159,40 @@ def binarize_image(image):
     return binary
 
 
+def resize_if_needed(image):
+    """
+    Resize image if it exceeds MAX_IMAGE_SIZE to optimize for LM Studio API
+    This reduces memory usage and bandwidth without significant quality loss
+    
+    Args:
+        image: numpy array of image
+    
+    Returns:
+        Resized image as numpy array (or original if no resize needed)
+    """
+    height, width = image.shape[:2]
+    max_dim = max(height, width)
+    
+    if max_dim <= MAX_IMAGE_SIZE:
+        return image
+    
+    # Calculate new dimensions
+    scale = MAX_IMAGE_SIZE / max_dim
+    new_width = int(width * scale)
+    new_height = int(height * scale)
+    
+    # Resize using high-quality interpolation
+    resized = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+    
+    if VERBOSE:
+        print(f"    📏 Resized {width}x{height} → {new_width}x{new_height}")
+    
+    return resized
+
+
 def preprocess_image(image_array, debug_name=None):
     """
     Apply all enabled preprocessing steps to image
-    IMPROVED: Optimized pipeline with quality checks
     
     Args:
         image_array: numpy array of image
@@ -326,104 +208,37 @@ def preprocess_image(image_array, debug_name=None):
         if VERBOSE:
             print(f"    → Grayscale conversion")
         img = convert_to_grayscale(img)
-        
-        if SAVE_DEBUG_IMAGES and debug_name:
-            debug_path = os.path.join(DEBUG_DIR, f"{debug_name}_1_grayscale.png")
-            cv2.imwrite(debug_path, img)
     
-    # Step 2: Deskew (correct rotation) - IMPROVED
+    # Step 2: Deskew (correct rotation)
     if ENABLE_DESKEW:
         if VERBOSE:
-            print(f"    → Auto-deskew (projection method)")
+            print(f"    → Auto-deskew")
         img = deskew_image(img, debug_name)
-        
-        if SAVE_DEBUG_IMAGES and debug_name:
-            debug_path = os.path.join(DEBUG_DIR, f"{debug_name}_2_deskewed.png")
-            cv2.imwrite(debug_path, img)
     
-    # Step 3: Reduce noise BEFORE contrast enhancement - REORDERED
-    # This prevents amplifying noise
-    if ENABLE_NOISE_REDUCTION:
-        if VERBOSE:
-            print(f"    → Noise reduction (bilateral filter)")
-        img = reduce_noise(img)
-        
-        if SAVE_DEBUG_IMAGES and debug_name:
-            debug_path = os.path.join(DEBUG_DIR, f"{debug_name}_3_denoised.png")
-            cv2.imwrite(debug_path, img)
-    
-    # Step 4: Enhance contrast - IMPROVED
+    # Step 3: Enhance contrast
     if ENABLE_CONTRAST_ENHANCEMENT:
         if VERBOSE:
-            print(f"    → Contrast enhancement (optimized CLAHE)")
+            print(f"    → Contrast enhancement")
         img = enhance_contrast(img)
-        
-        if SAVE_DEBUG_IMAGES and debug_name:
-            debug_path = os.path.join(DEBUG_DIR, f"{debug_name}_4_contrast.png")
-            cv2.imwrite(debug_path, img)
     
-    # Step 5: Sharpen for better text readability - NEW
-    # Only if not binarizing (binarization doesn't need sharpening)
-    if not ENABLE_BINARIZATION:
+    # Step 4: Reduce noise
+    if ENABLE_NOISE_REDUCTION:
         if VERBOSE:
-            print(f"    → Adaptive sharpening")
-        img = sharpen_image(img)
-        
-        if SAVE_DEBUG_IMAGES and debug_name:
-            debug_path = os.path.join(DEBUG_DIR, f"{debug_name}_5_sharpened.png")
-            cv2.imwrite(debug_path, img)
+            print(f"    → Noise reduction")
+        img = reduce_noise(img)
     
-    # Step 6: Binarization (optional, can be aggressive)
+    # Step 5: Binarization (optional, can be aggressive)
     if ENABLE_BINARIZATION:
         if VERBOSE:
-            print(f"    → Binarization (adaptive)")
+            print(f"    → Binarization")
         img = binarize_image(img)
-        
-        if SAVE_DEBUG_IMAGES and debug_name:
-            debug_path = os.path.join(DEBUG_DIR, f"{debug_name}_6_binary.png")
-            cv2.imwrite(debug_path, img)
+    
+    # Step 6: Resize if needed (optimize for LM Studio API)
+    if VERBOSE:
+        print(f"    → Size optimization")
+    img = resize_if_needed(img)
     
     return img
-
-
-def validate_image_quality(original, processed):
-    """
-    Validate that preprocessing improved or maintained image quality
-    NEW FUNCTION: Prevents making images worse
-    
-    Args:
-        original: Original image
-        processed: Processed image
-    
-    Returns:
-        bool: True if quality is acceptable
-    """
-    # Convert both to grayscale if needed
-    if len(original.shape) == 3:
-        orig_gray = cv2.cvtColor(original, cv2.COLOR_BGR2GRAY)
-    else:
-        orig_gray = original
-    
-    if len(processed.shape) == 3:
-        proc_gray = cv2.cvtColor(processed, cv2.COLOR_BGR2GRAY)
-    else:
-        proc_gray = processed
-    
-    # Check if processed image is too dark or too bright
-    mean_brightness = np.mean(proc_gray)
-    if mean_brightness < 50 or mean_brightness > 220:
-        if VERBOSE:
-            print(f"    ⚠️  Warning: Unusual brightness ({mean_brightness:.1f})")
-        return False
-    
-    # Check if there's still enough contrast
-    contrast = np.std(proc_gray)
-    if contrast < 20:
-        if VERBOSE:
-            print(f"    ⚠️  Warning: Low contrast ({contrast:.1f})")
-        return False
-    
-    return True
 
 
 # ============================================================================
@@ -447,7 +262,7 @@ def process_single_pdf(pdf_path, output_dir):
     try:
         # Convert PDF to images
         if VERBOSE:
-            print(f"  📄 Converting PDF to images (DPI: {PDF_TO_IMAGE_DPI})...")
+            print(f"  🔄 Converting PDF to images (DPI: {PDF_TO_IMAGE_DPI})...")
         
         images = convert_from_path(
             pdf_path,
@@ -472,24 +287,15 @@ def process_single_pdf(pdf_path, output_dir):
             # Save original if debug mode
             if SAVE_DEBUG_IMAGES:
                 debug_name = f"{Path(pdf_name).stem}_page{page_num}"
-                original_path = os.path.join(DEBUG_DIR, f"{debug_name}_0_original.png")
+                original_path = os.path.join(DEBUG_DIR, f"{debug_name}_original.png")
                 cv2.imwrite(original_path, img_array)
             
-            # Apply preprocessing
-            print(f"  🔧 Applying optimized preprocessing...")
-            original_for_validation = img_array.copy()
+            # Apply preprocessing (includes resize)
+            print(f"  🔧 Applying preprocessing...")
             processed = preprocess_image(
                 img_array,
                 debug_name=f"{Path(pdf_name).stem}_page{page_num}" if SAVE_DEBUG_IMAGES else None
             )
-            
-            # Validate quality
-            if not validate_image_quality(original_for_validation, processed):
-                print(f"  ⚠️  Quality check failed, using minimal preprocessing")
-                # Fallback to minimal processing
-                processed = convert_to_grayscale(img_array)
-                if ENABLE_CONTRAST_ENHANCEMENT:
-                    processed = enhance_contrast(processed)
             
             # Generate output filename
             if num_pages == 1:
@@ -604,19 +410,18 @@ def main():
     """Main execution function"""
     
     print("=" * 60)
-    print("🚀 STEP 1: PDF TO OPTIMIZED IMAGES (IMPROVED)")
+    print("🚀 STEP 1: PDF TO OPTIMIZED IMAGES")
     print("=" * 60)
     print(f"Input directory: {INPUT_PDF_DIR}")
     print(f"Output directory: {STEP1_OUTPUT_DIR}")
     print(f"\n⚙️  Preprocessing settings:")
     print(f"  - DPI: {PDF_TO_IMAGE_DPI}")
+    print(f"  - Max image size: {MAX_IMAGE_SIZE}px")
     print(f"  - Grayscale: {ENABLE_GRAYSCALE}")
-    print(f"  - Deskew: {ENABLE_DESKEW} (projection method)")
-    print(f"  - Noise reduction: {ENABLE_NOISE_REDUCTION} (bilateral filter)")
-    print(f"  - Contrast enhancement: {ENABLE_CONTRAST_ENHANCEMENT} (optimized CLAHE)")
-    print(f"  - Sharpening: {not ENABLE_BINARIZATION} (adaptive)")
+    print(f"  - Deskew: {ENABLE_DESKEW}")
+    print(f"  - Contrast enhancement: {ENABLE_CONTRAST_ENHANCEMENT}")
+    print(f"  - Noise reduction: {ENABLE_NOISE_REDUCTION}")
     print(f"  - Binarization: {ENABLE_BINARIZATION}")
-    print(f"  - Quality validation: Enabled")
     
     # Check if input directory exists
     if not os.path.exists(INPUT_PDF_DIR):
@@ -629,6 +434,7 @@ def main():
     
     print("\n✨ Step 1 completed!")
     print(f"📁 Output saved to: {STEP1_OUTPUT_DIR}")
+    print(f"ℹ️  Images are pre-optimized for LM Studio API (max {MAX_IMAGE_SIZE}px)")
     
     if results["success"] > 0:
         print(f"\n➡️  Next step: Run step2_extract_data.py to extract data from images")

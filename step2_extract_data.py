@@ -9,7 +9,6 @@ import base64
 import time
 import re
 from pathlib import Path
-from PIL import Image
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import psutil
@@ -22,7 +21,6 @@ from config import (
     REQUEST_TIMEOUT,
     MAX_RETRIES,
     RETRY_BASE_DELAY,
-    MAX_IMAGE_SIZE,
     TEMPERATURE,
     MAX_TOKENS,
     EXTRACTION_PROMPT,
@@ -39,9 +37,10 @@ from config import (
 def call_lm_studio(image_path, prompt):
     """
     Call LM Studio API with vision model to extract data from receipt image
+    Images from step 1 are already optimized, so no resize needed here
     
     Args:
-        image_path (str): Path to the receipt image file
+        image_path (str): Path to the receipt image file (already optimized)
         prompt (str): Extraction prompt
     
     Returns:
@@ -51,10 +50,7 @@ def call_lm_studio(image_path, prompt):
         Exception: If API call fails after all retries
     """
     
-    # Resize image if necessary
-    image_path = resize_image_if_needed(image_path)
-    
-    # Encode image to base64
+    # Encode image to base64 (no resize needed - already done in step 1)
     with open(image_path, "rb") as image_file:
         image_data = base64.b64encode(image_file.read()).decode("utf-8")
     
@@ -278,41 +274,6 @@ def sanitize_extracted_data(data):
 # ============================================================================
 # IMAGE PROCESSING
 # ============================================================================
-
-def resize_image_if_needed(image_path):
-    """
-    Resize image if it exceeds MAX_IMAGE_SIZE to save memory and bandwidth
-    
-    Args:
-        image_path (str): Path to original image
-    
-    Returns:
-        str: Path to resized image (or original if no resize needed)
-    """
-    
-    with Image.open(image_path) as img:
-        width, height = img.size
-        max_dim = max(width, height)
-        
-        if max_dim <= MAX_IMAGE_SIZE:
-            return image_path
-        
-        # Calculate new dimensions
-        scale = MAX_IMAGE_SIZE / max_dim
-        new_width = int(width * scale)
-        new_height = int(height * scale)
-        
-        # Resize and save
-        resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        
-        # Save to temp file
-        resized_path = image_path.replace('.', '_resized.')
-        resized.save(resized_path, quality=90)
-        
-        if VERBOSE:
-            print(f"    ðŸ“ Resized {width}x{height} â†’ {new_width}x{new_height}")
-        return resized_path
-
 
 # ============================================================================
 # PARALLEL PROCESSING
