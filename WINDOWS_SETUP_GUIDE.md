@@ -139,8 +139,7 @@ This will install:
 1. **Open LM Studio**
 2. Click **"Search"** (🔍 icon on left sidebar)
 3. In search box, type: `qwen3-vl`
-4. Find **"Qwen2-VL-2B-Instruct"** or similar
-5. Click **"Download"**
+4. Click **"Download"**
    - Choose **Q4** or **Q5** quantization (smaller = faster, less accurate)
    - Wait for download (~2-3GB)
 
@@ -149,7 +148,7 @@ This will install:
 
 ### 5.3 Start LM Studio Server
 
-1. In LM Studio, click **"Local Server"** tab (📡 icon)
+1. In LM Studio, click **"Local Server"** tab
 2. In **"Select model to load"** dropdown, choose your downloaded model
 3. Click **"Start Server"** button
 4. **Keep LM Studio running** while using the pipeline
@@ -241,13 +240,6 @@ After the pipeline completes:
 1. Open: `output\step3_excel\Rekapitulasi_Kuitansi.xlsx`
 2. Your extracted receipt data is ready!
 
-The Excel file will have:
-- Formatted table with all receipt data
-- Bold headers
-- Borders
-- Proper currency formatting
-- Sorted by receipt number
-
 ---
 
 ## Common Issues & Troubleshooting
@@ -323,10 +315,6 @@ The Excel file will have:
 - Some antivirus software may block Python scripts
 - Add project folder to antivirus exceptions if needed
 
-### Performance
-- Windows may be slightly slower than macOS for image processing
-- Expected speed: 3-5 receipts/minute on a typical Windows laptop
-
 ---
 
 ## Configuration (Optional)
@@ -362,16 +350,6 @@ ENABLE_CONTRAST_ENHANCEMENT = True # Keep contrast (recommended)
 
 ---
 
-## Performance Tips for Windows
-
-1. **Close other applications** while running the pipeline
-2. **Use SSD** for better I/O performance
-3. **Don't run on battery** - may throttle CPU
-4. **Disable Windows Search** temporarily (indexing can slow things down)
-5. **Use latest GPU drivers** if you have a dedicated GPU
-
----
-
 ## Uninstalling
 
 To remove everything:
@@ -379,6 +357,7 @@ To remove everything:
 1. **Delete project folder**
 2. **Uninstall Python** (optional):
    - Settings → Apps → Python → Uninstall
+   - Remove from PATH
 3. **Remove Poppler** (optional):
    - Delete `C:\poppler`
    - Remove from PATH
@@ -409,5 +388,3 @@ Once everything is working:
 4. **Adjust preprocessing** for your specific receipt types
 
 **Estimated total setup time:** 20-30 minutes
-
-Good luck! 🚀
